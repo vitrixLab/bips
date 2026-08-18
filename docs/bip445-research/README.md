@@ -27,3 +27,7 @@ The statuses used throughout this dossier are deliberately conservative: `VERIFI
 ## Repository boundary
 
 All work represented by this dossier is confined to the `vitrixLab/bips` fork. The intended publication unit is a fork-level draft PR only. No upstream PR, issue, branch, or discussion is modified by this documentation.
+
+## Reports
+
+- [BIP-445 Source-Evidence Research Report](BIP445-SOURCE-RESEARCH-REPORT.md)
