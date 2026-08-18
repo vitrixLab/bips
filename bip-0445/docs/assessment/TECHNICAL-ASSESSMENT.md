@@ -1,4 +1,22 @@
-# BIP-445 Technical Assessment Record
+# BIP-445 Technical Assessment
+
+## Documentation Control
+
+| Field | Value |
+|---|---|
+| Control Number | BIP445-ASSESS-0001 |
+| Revision | 2 |
+| Branch | assessment/bip-445-technical-review |
+| Initial Assessment Commit | c343b6aea204b718dfc856ecce258cdf2723b518 |
+| Date | 2026-08-18 |
+| Status | INTERNAL DRAFT / NOT FOR UPSTREAM POSTING |
+
+## Version History
+
+| Version | Date | Change Summary |
+|---|---:|---|
+| 1 | 2026-08-17 | Initial technical assessment checkpoint |
+| 2 | 2026-08-18 | Source-evidence update; removed rejected message-semantics claim; added documentation control |
 
 **Assessment:** BIP-445 — FROST Signing Protocol for BIP340 Signatures  
 **Repository under assessment:** `vitrixLab/bips`  
@@ -8,139 +26,178 @@
 **Upstream reference:** `siv2r/bips:bip-frost-signing`  
 **Assessment status:** Independent technical review; no protocol implementation changes
 
-## 1. Scope and exact baseline
+## 1. Scope and evidence discipline
 
-This record assesses the BIP-445 specification and the implementation state represented by the exact baseline SHA above. The owned `bip-frost-signing` branch remains pristine. This assessment branch contains review evidence only.
+This record assesses the BIP-445 specification and the implementation state represented by the exact baseline SHA above. The owned `bip-frost-signing` branch remains the pristine reference snapshot. This assessment branch contains review evidence only.
 
-The BIP identifies itself as a Draft specification for a BIP340-compatible FROST protocol and states that key generation is out of scope. It describes trusted-dealer setup and DKG such as ChillDKG as compatible sources of key material. The specification also defines a participant bound of `n < 2^32` and explains that this follows from four-byte participant-identifier encoding.
+The review is specification-first and implementation-aware. LLM-assisted hypotheses are treated only as hypothesis generation. A candidate claim becomes a current assessment finding only after comparison with normative text, implementation behavior, protocol/test evidence, and relevant prior-art or issue tracking.
 
-## 2. Methodology
+Evidence discipline for future findings is:
 
-The review is specification-first and implementation-aware:
+1. identify the exact normative text;
+2. identify the exact implementation/API behavior;
+3. provide a reproducible input/output, trace, vector, or test where applicable;
+4. distinguish unspecified behavior from an expectation;
+5. check whether the point is already discussed or tracked elsewhere;
+6. attempt expert-level falsification; and
+7. retain only claims that survive that gate.
 
-1. Freeze the exact upstream-derived baseline by commit SHA.
-2. Separate specification claims from implementation behavior and from external cryptographic security results.
-3. Trace security-critical data through the Signers Context, key material, nonce binding, message binding, and partial-signature verification paths.
-4. Check stated contracts against the representations and validation rules required by the protocol.
-5. Record findings without modifying BIP-445 protocol text or implementation code.
-6. Treat claims that require an external security proof, DKG contract, or implementation-level test as claims requiring explicit evidence rather than silently accepting them.
+## 2. Corrected Evidence Status
 
-## 3. Finding A — Adaptive-security model
+The latest source-evidence pass produces the following corrections and confirmations:
 
-**Disposition:** Requires security-model qualification / further proof review.
+- **ChillDKG `DKGOutput` alignment:** `VALID AREA, ALREADY TRACKED` in `BlockstreamResearch/bip-frost-dkg#157`. This is a real interoperability boundary, but it is not a novel discovery.
+- **Message absent vs zero-length:** `WITHDRAWN`. The message `m` is a mandatory session argument and is always present. The earlier absent-vs-empty claim is not supported and must not be defended or restated as an open specification ambiguity.
+- **Public review participation:** `PAUSED`. This follows the maintainer credibility warning and the need to rebuild confidence through independently verified, narrow technical work before further public participation.
 
-The BIP states that FROST3 has an existential-unforgeability result under the AOMDL assumption and describes protection against a malicious coordinator, including a coordinator colluding with up to `t-1` signers. Those statements establish important security goals, but the BIP text does not by itself define a full adaptive-corruption security experiment or provide a proof of full adaptive security for the concrete BIP-445 construction.
+## 3. Verified Technical Findings
 
-This distinction matters because adaptive security allows corruption decisions to depend on information learned during protocol execution. Contemporary FROST literature treats adaptive security as a separate and materially stronger security question, with additional assumptions and proof considerations. Therefore, the assessment should not interpret the BIP's AOMDL/FROST3 statement as automatically establishing full adaptive security.
+### 3.1 Nonce coefficient `b` is signer-set bound via a four-byte count prefix
 
-**Assessment consequence:** Any implementation or deployment claim of full adaptive security must identify the exact security theorem, adversary model, corruption threshold, assumptions, and applicability to the BIP-445 construction.
+The nonce-coefficient derivation uses the signer-count prefix together with the serialized signer identifiers, aggregate nonce, x-only aggregate public key, and message. The documented changelog records the signer-count prefix as a correction for ambiguous concatenation of the signer-set-bound inputs.
 
-## 4. Finding B — ChillDKG / DKGOutput compatibility contract
+**Status:** `VERIFIED`
 
-**Disposition:** Compatibility contract requires explicit verification.
+### 3.2 Deterministic nonce binds `my_id` and signer identifiers
 
-BIP-445 says that key generation is out of scope and that implementations may use ChillDKG. It further says valid key material must satisfy both of these conditions:
+The deterministic nonce derivation includes the participant's `my_id` and the signer identifiers. The changelog records this binding as an intentional correction to prevent the deterministic nonce from being independent of the active signer context.
 
-1. each secret share is a Shamir share of the threshold secret key; and
-2. each public share equals `secshare * G`.
+**Status:** `VERIFIED`
 
-It then states that ChillDKG satisfies these conditions and that its DKG output can be used directly as key material.
+### 3.3 Error/blame semantics distinguish setup errors from invalid contributions
 
-The assessment requirement is therefore not merely that a library is called `ChillDKG`, but that the concrete DKG output supplied to the BIP-445 signing API maps exactly to the BIP's `secshare`, `pubshare`, threshold-public-key, participant-identifier, `n`, and `t` semantics, including the required Taproot-safe threshold public-key property.
+The implementation distinguishes malformed setup/configuration conditions, represented by `ValueError`, from malicious or invalid runtime protocol contributions, represented by `InvalidContributionError`.
 
-**Assessment consequence:** A compatible implementation should document and test this field-level contract rather than relying on name-level compatibility.
+This distinction is useful for implementation behavior and protocol blame semantics; it should not be expanded into stronger attribution claims than the available evidence supports.
 
-## 5. Finding C — ValidateSignersCtx semantics
+**Status:** `VERIFIED`
 
-**Disposition:** Security-critical validation contract; requires explicit implementation correspondence.
+### 3.4 Arbitrary tweaks are explicitly an open security question
 
-BIP-445 requires the Signers Context to pass `ValidateSignersCtx` before signing. The stated validation rejects duplicate identifiers and confirms that the key material reproduces the threshold public key. The specification also says that `Sign`, `PartialSigVerify`, and `PartialSigAgg` include this check for clarity, while an implementation may validate once and reuse the validated context.
+The specification distinguishes the Bitcoin-derived tweak model from arbitrary/adversarial tweaks and explicitly identifies security implications of accepting arbitrary tweaks as an open question. This is a normative qualification of the security boundary, not evidence of an existing exploit.
 
-This makes the validation boundary security-critical. In particular, the review must distinguish:
+**Status:** `VERIFIED`
 
-- validation of the context's internal consistency;
-- validation that the selected signer set is the intended signer set;
-- protection against coordinator equivocation over different Signers Context values; and
-- validation of the underlying key-generation protocol itself.
+### 3.5 BIP-340 challenge and x-only semantics are inherited intentionally
 
-The BIP explicitly warns that passing `ValidateSignersCtx` establishes functional compatibility with the signing protocol but does not establish security of the key-generation protocol.
+BIP-445 uses the BIP-340 challenge construction and x-only public-key semantics for the Schnorr signing layer. This is the compatibility surface that connects the threshold signing construction to BIP-340/Taproot semantics.
 
-**Assessment consequence:** Implementations must not treat `ValidateSignersCtx` as a substitute for authenticating the signer context or for proving the security properties of the DKG/setup mechanism.
+**Status:** `VERIFIED`
 
-## 6. Finding D — Absent vs present-empty message semantics
+### 3.6 BIP-327 tweak context is reused intentionally
 
-**Disposition:** Requires implementation-level clarification and test coverage.
+The specification reuses the BIP-327 tweak-context model rather than inventing a separate incompatible tweak representation. This is an intentional dependency/interoperability surface and should be preserved when reasoning about tweak handling.
 
-BIP-445 makes message handling an optional feature and permits an implementation to fail for unsupported message lengths. The nonce-generation interface also uses optional contextual inputs, including the message where it is already determined.
+**Status:** `VERIFIED`
 
-The assessment must distinguish three states where an API permits optional data:
+### 3.7 Coordinator abort and forgery boundaries are distinct
 
-- the message/context argument is absent;
-- the argument is present and contains an empty byte string; and
-- the argument is present and contains a non-empty message.
+Under the stated protocol assumptions, the coordinator can cause an identifiable or protocol-level abort, while the specification's security model does not treat coordinator control alone as sufficient to forge a valid signature. These are distinct capabilities and should not be conflated.
 
-These states must not be conflated if serialization or hashing treats absence differently from an encoded empty value. Because nonce derivation is security-sensitive, the canonical serialization of optional inputs must be deterministic and identical across independent implementations.
+**Status:** `VERIFIED` as a statement of the specified security boundary
 
-**Assessment consequence:** Add explicit vectors/tests for absent, present-empty, and ordinary message values wherever the API exposes optional message/context fields. The protocol specification should define the serialization distinction if the distinction is security-relevant.
+### 3.8 ChillDKG interoperability is a real boundary, not a novel discovery
 
-## 7. Finding E — `n < 2^32` validation
+BIP-445 places key generation outside the signing protocol and allows DKG output such as ChillDKG to supply compatible key material. The concrete `DKGOutput`-to-BIP-445 input mapping therefore matters at the API and interoperability boundary. The corresponding ChillDKG issue #157 already tracks alignment work.
 
-**Disposition:** Specification-level validation requirement; implementation enforcement should be verified.
+**Status:** `VERIFIED` / `NON-NOVEL`
 
-BIP-445 explicitly constrains the participant count to `1 <= t <= u <= n < 2^32`. The accompanying rationale states that participant identifiers are serialized as four-byte big-endian integers and fed into the tagged hash that binds nonces to the signer set, so identifiers must fit in 32 bits.
+## 4. Withdrawn Claim
 
-This is not merely a practical recommendation. It follows from the specified identifier encoding and therefore needs an explicit boundary check before serialization. An implementation must reject an `n` or participant identifier that cannot be represented by the required four-byte encoding rather than silently truncating, wrapping, or accepting an out-of-range value.
+### 4.1 Absent vs zero-length message semantics
 
-**Assessment consequence:** Boundary tests should cover the largest valid value and the first invalid value, including identifier serialization at the `2^32 - 1` / `2^32` boundary. The assessment should also verify that all relevant APIs enforce the same bound consistently.
+The earlier assessment treated absent and present-empty message states as a potential specification ambiguity. That position is withdrawn.
 
-## 8. Evidence / source references
+The maintainer correction was that the message is a mandatory argument and therefore always present. The current source evidence is consistent with `m` being a mandatory session parameter. An optional `msg` accepted by nonce-generation machinery is a separate defense-in-depth/context input and does not establish an absent-vs-empty defect in the BIP-445 session message semantics.
 
-### Primary specification evidence
+**Status:** `WITHDRAWN`
 
-The assessment baseline's `bip-0445.md` states:
+**Disposition:** Do not defend, repeat, or present this as an unresolved BIP-445 specification ambiguity.
 
-- BIP-445 is a Draft specification for FROST compatible with BIP340.
-- Key generation is out of scope and trusted-dealer setup or a DKG such as ChillDKG may supply key material.
-- Valid key material requires Shamir-consistent secret shares and public shares equal to `secshare * G`.
-- `ValidateSignersCtx` rejects duplicate identifiers and checks reproduction of the threshold public key.
-- Passing `ValidateSignersCtx` does not establish security of the key-generation protocol.
-- The participant count is constrained by `1 <= t <= u <= n < 2^32`, with the four-byte identifier encoding given as the reason for the upper bound.
+## 5. Maintainer Feedback Record
 
-### External cryptographic context
+The maintainer feedback is recorded as corrective evidence, not as an adversarial characterization.
 
-The adaptive-security finding is deliberately separated from the BIP's own FROST3/AOMDL statement. Adaptive security is a distinct security property and must be evaluated against the exact construction and security model rather than inferred from the existence of an existential-unforgeability result.
+### Admin 1
 
-### Author-supplied design analysis
+- The ChillDKG interoperability point was already tracked.
+- The message-semantics point was technically invalid because the message argument is mandatory and always present.
 
-A publicly available analysis by the BIP author discusses the flow of `SignersContext`, coordinator equivocation, and related validation/security questions. This is useful corroborating material, but it is treated as secondary evidence rather than as authoritative proof of the protocol's security.
+**Classification:** technical correction and novelty correction.
 
-## 9. Severity and disposition
+### Admin 2
 
-| Finding | Current disposition | Severity basis |
+- Contribution quality was explicitly criticized.
+- The feedback included a warning to improve contribution quality or cease posting in the repository.
+
+**Classification:** contribution-quality / credibility warning.
+
+**Assessment response:** Public BIP-445 review participation is paused while the research process is recalibrated around source evidence, falsification, reproducibility, and narrow claims.
+
+## 6. Security and Interoperability Assessment Boundaries
+
+The following boundaries remain important research surfaces:
+
+- signer-set/session binding for deterministic nonce derivation;
+- serialization and domain separation for every security-critical hash input;
+- the distinction between setup/configuration failures and runtime invalid contributions;
+- coordinator capabilities, including abort versus forgery under the stated assumptions;
+- the security boundary for arbitrary/adversarial tweaks;
+- concrete DKG-output/API compatibility with ChillDKG;
+- BIP-340 challenge/x-only compatibility; and
+- reuse of BIP-327 tweak-context semantics.
+
+These surfaces should be treated as research targets rather than automatically as defects. Each future claim must pass the evidence gate in Section 1.
+
+## 7. Future Research Roadmap
+
+The broader research roadmap is maintained in the private BIP-445 methodology dossier. The three phases are:
+
+1. **Phase A — Security hardening**: coordinator/threat-model formalization, signer-subset/session-binding regression vectors, serialization/domain-separation analysis, arbitrary-tweak boundaries, and identifiable-abort assumptions.
+2. **Phase B — Interoperability/conformance**: cross-implementation harnesses, canonical conformance vectors, C/Rust/C++ API mapping, error/blame semantics, and reference-implementation/pseudocode consistency checks.
+3. **Phase C — Ecosystem architecture**: reusable tweak-context abstractions, broader arbitrary/agnostic tweaking research, ROAST/FROST integration guidance, additional implementations, and independent audits.
+
+Reference: [BIP-445 Future Research Roadmap](https://github.com/vitrixLab/bips/blob/research/bip445-methodology-dossier/docs/bip445-research/FUTURE-RESEARCH-ROADMAP.md)
+
+## 8. Evidence / Source References
+
+### Primary specification and implementation baseline
+
+The assessment baseline identifies BIP-445 as a Draft FROST signing specification compatible with BIP-340. It places key generation out of scope, defines signer-context validation, constrains the participant count to `1 <= t <= u <= n < 2^32`, and describes the required relationship between secret shares, public shares, and the threshold public key.
+
+The source-evidence research report records the verified nonce, error, tweak, challenge, and interoperability findings used for this revision.
+
+### External interoperability reference
+
+`BlockstreamResearch/bip-frost-dkg#157` is the existing tracking point for ChillDKG `DKGOutput` alignment. The issue is treated as prior art/tracking evidence, not as a newly discovered defect.
+
+### Security-model qualification
+
+The BIP's stated FROST3/AOMDL security claim is not silently promoted to a broader claim such as full adaptive security. Any stronger security assertion requires an applicable theorem, adversary model, corruption model, assumptions, and evidence that the theorem applies to the concrete BIP-445 construction.
+
+## 9. Current Disposition Table
+
+| Surface | Current disposition | Evidence status |
 |---|---|---|
-| A — Adaptive-security model | Qualification / proof review required | Security-model claim can be overstated if adaptive security is inferred without a matching theorem |
-| B — ChillDKG/DKGOutput contract | Compatibility verification required | Incorrect field/representation mapping can invalidate signing or security assumptions |
-| C — ValidateSignersCtx semantics | Security-critical validation review | Context integrity/authentication is distinct from DKG security |
-| D — Absent vs present-empty message | Clarification + vectors required | Ambiguous optional-input serialization can create cross-implementation divergence |
-| E — `n < 2^32` | Boundary validation required | Identifier encoding has a hard representational bound |
+| Signer-set binding in nonce derivation | Confirmed design rule | `VERIFIED` |
+| Serialization/domain separation | Confirmed security surface | `VERIFIED` |
+| Error/blame boundary | Confirmed implementation distinction | `VERIFIED` |
+| Arbitrary tweak security | Explicit open question | `VERIFIED` as normative qualification |
+| BIP-340 challenge/x-only semantics | Intentional compatibility surface | `VERIFIED` |
+| BIP-327 tweak context | Intentional reuse | `VERIFIED` |
+| Coordinator abort vs forgery | Distinct stated capability boundary | `VERIFIED` |
+| ChillDKG `DKGOutput` alignment | Valid, already tracked | `VERIFIED` / `NON-NOVEL` |
+| Absent-vs-empty message claim | Withdrawn | `WITHDRAWN` |
+| Public review participation | Paused for credibility/process recalibration | `CURRENT` |
 
 These dispositions are assessment findings, not proposed BIP modifications.
 
-## 10. Conclusion / merge recommendation
+## 10. Conclusion
 
-This record does **not** propose merging protocol changes into the BIP-445 baseline. The pristine implementation branch remains the reference snapshot.
+This assessment remains an independent technical-review artifact. It does not propose modifying or merging BIP-445 protocol text or implementation code.
 
-The current assessment conclusion is:
+The latest evidence pass narrows the assessment rather than expanding it: signer-set binding, serialization/domain separation, error/blame boundaries, tweak security, BIP-340/BIP-327 compatibility, coordinator capability boundaries, and concrete ChillDKG interoperability remain legitimate research surfaces. The absent-vs-zero-length message claim is withdrawn, and the ChillDKG point is explicitly recognized as already tracked.
 
-- BIP-445 contains explicit contracts for signer-context validation, key-material compatibility, message optionality, and the `n < 2^32` participant bound.
-- Those contracts should be made executable through implementation tests and interoperability vectors before treating them as fully demonstrated properties.
-- The adaptive-security claim requires particular care: the specification's FROST3/AOMDL statement should not be silently promoted to a claim of full adaptive security without an applicable security theorem.
-- ChillDKG compatibility should be demonstrated at the concrete DKG-output/API boundary.
-- `ValidateSignersCtx` must remain conceptually separate from authentication of the signer context and from the security of the DKG.
-- Optional message semantics and the four-byte participant-identifier boundary deserve explicit negative and boundary tests.
-
-**Merge recommendation for this assessment record:** retain as an independent technical-review artifact. Any proposed protocol/specification changes should be raised separately and must not be conflated with this assessment branch.
-
----
+Future public participation, if reconsidered, should be limited to claims that can survive exact normative citation, implementation inspection, reproducible evidence, prior-art checking, and direct falsification attempts.
 
 **Audit integrity:** This file is an assessment artifact only. It does not modify BIP-445 protocol text, implementation code, or the pristine `bip-frost-signing` branch.
