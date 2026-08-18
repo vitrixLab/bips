@@ -4,3 +4,7 @@ bip-0174/coinjoin-workflow.pdf
 bip-0174/multisig-workflow.aux
 bip-0174/multisig-workflow.log
 bip-0174/multisig-workflow.pdf
+
+# BIP-445 research materials sanitation
+# Ignore local/generated copies of the internal research dossier.
+docs/bip445-research/
